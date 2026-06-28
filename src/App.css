@@ -1,9 +1,0 @@
-
-/* Force the app to take up the entire browser window */
-html, body, #root {
-  margin: 0;
-  padding: 0;
-  width: 100%;
-  height: 100vh;
-  background-color: #f8fafc; /* slate-50 to match the app */
-}

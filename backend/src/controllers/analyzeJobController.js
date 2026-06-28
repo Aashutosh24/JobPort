@@ -1,5 +1,6 @@
 import Job from "../models/Job.models.js";
-import analyzeJob from "../services/jobAnalysis.js";
+import JobAnalysis from "../models/JobAnalysis.models.js";
+import analyzeJob from "../services/jobAnalysisService.js";
 
 export const analyzeJobController = async (req, res) => {
   try {
@@ -15,30 +16,36 @@ export const analyzeJobController = async (req, res) => {
       });
     }
 
-    // Prevent duplicate analysis (optional)
-    if (job.aiAnalysis?.analyzed) {
+    // Check if Job is already analyzed
+    let jobAnalysis = await JobAnalysis.findOne({ jobId: id });
+
+    if (jobAnalysis) {
       return res.status(200).json({
         success: true,
         message: "Job already analyzed",
-        analysis: job.aiAnalysis,
+        analysis: jobAnalysis,
       });
     }
 
-    // Call AI Service
+    // Call AI Service (Qwen 2.5 + BGE Embeddings)
     const analysis = await analyzeJob(job.description);
 
-    // Save analysis to MongoDB
-    job.aiAnalysis = {
+    // Save analysis to the separate JobAnalysis collection
+    jobAnalysis = await JobAnalysis.create({
+      jobId: id,
       ...analysis,
+    });
+
+    // Mark job as analyzed (optional, for quick checks)
+    job.aiAnalysis = {
       analyzed: true,
     };
-
     await job.save();
 
     return res.status(200).json({
       success: true,
       message: "Job analyzed successfully",
-      analysis: job.aiAnalysis,
+      analysis: jobAnalysis,
     });
 
   } catch (error) {

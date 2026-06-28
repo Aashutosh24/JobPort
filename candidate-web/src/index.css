@@ -1,0 +1,21 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #4F7CFF;
+  --color-secondary: #A855F7;
+  --color-success: #10B981;
+  --color-background: #020617;
+  --color-surface: #0F172A;
+  
+  --background-image-hero-glow: radial-gradient(circle, rgba(79,124,255,0.15) 0%, rgba(168,85,247,0.05) 50%, rgba(0,0,0,0) 100%);
+}
+
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background-color: #020617;
+  color: #f8fafc;
+  font-family: 'Inter', sans-serif;
+  overflow-x: hidden;
+}
