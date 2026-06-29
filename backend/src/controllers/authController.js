@@ -4,7 +4,12 @@ import generateToken from "../utils/generateToken.js";
 
 export const register = async (req, res) => {
   try {
-    const { name, email, password, company } = req.body;
+    let { name, email, password, company } = req.body;
+
+    // Sanitize inputs by stripping any accidental literal quotes
+    if (name) name = name.replace(/^["']|["']$/g, "").trim();
+    if (email) email = email.replace(/^["']|["']$/g, "").trim().toLowerCase();
+    if (company) company = company.replace(/^["']|["']$/g, "").trim();
 
     const exists = await User.findOne({ email });
 
@@ -37,7 +42,10 @@ export const register = async (req, res) => {
 
 export const login = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    let { email, password } = req.body;
+
+    // Sanitize inputs by stripping any accidental literal quotes
+    if (email) email = email.replace(/^["']|["']$/g, "").trim().toLowerCase();
 
     const user = await User.findOne({ email });
 

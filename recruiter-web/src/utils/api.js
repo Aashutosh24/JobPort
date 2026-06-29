@@ -1,4 +1,4 @@
-const API_BASE_URL = "http://localhost:5000/api";
+const API_BASE_URL = `http://${window.location.hostname}:5000/api`;
 
 const getHeaders = () => {
   const token = localStorage.getItem("token");
@@ -124,10 +124,11 @@ export const api = {
     return data.candidate;
   },
 
-  inviteCandidate: async (id) => {
+  inviteCandidate: async (id, customEmail) => {
     const res = await fetch(`${API_BASE_URL}/candidates/${id}/invite`, {
       method: "POST",
       headers: getHeaders(),
+      body: JSON.stringify({ customEmail }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.message || "Failed to send interview invitation");

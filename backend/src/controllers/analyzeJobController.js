@@ -1,6 +1,6 @@
 import Job from "../models/Job.models.js";
 import JobAnalysis from "../models/JobAnalysis.models.js";
-import analyzeJob from "../services/jobAnalysisService.js";
+import { getAIProvider } from "../services/ai/factory.js";
 
 export const analyzeJobController = async (req, res) => {
   try {
@@ -8,37 +8,40 @@ export const analyzeJobController = async (req, res) => {
 
     // Find Job
     const job = await Job.findById(id);
-
     if (!job) {
-      return res.status(404).json({
-        success: false,
-        message: "Job not found",
-      });
+      return res.status(404).json({ success: false, message: "Job not found" });
     }
 
-    // Check if Job is already analyzed
-    let jobAnalysis = await JobAnalysis.findOne({ jobId: id });
+    // If already analyzed, delete the old analysis so we get a fresh one
+    await JobAnalysis.deleteOne({ jobId: id });
 
-    if (jobAnalysis) {
-      return res.status(200).json({
-        success: true,
-        message: "Job already analyzed",
-        analysis: jobAnalysis,
-      });
-    }
+    // Get AI Provider
+    const aiProvider = getAIProvider();
 
-    // Call AI Service (Qwen 2.5 + BGE Embeddings)
-    const analysis = await analyzeJob(job.description);
+    // Call AI Service - pass the full job including the explicit experience range
+    const analysis = await aiProvider.analyzeJob(job.description, {
+      explicitExperience: job.experience,  // e.g. "2-3 years" from the form
+      title: job.title,
+      location: job.location,
+    });
 
-    // Save analysis to the separate JobAnalysis collection
-    jobAnalysis = await JobAnalysis.create({
+    // Save analysis
+    const jobAnalysis = await JobAnalysis.create({
       jobId: id,
       ...analysis,
     });
 
-    // Mark job as analyzed (optional, for quick checks)
+    // Mark job as analyzed with full details
     job.aiAnalysis = {
       analyzed: true,
+      extractedSkills: analysis.extractedSkills,
+      preferredSkills: analysis.preferredSkills,
+      softSkills: analysis.softSkills,
+      implicitRequirements: analysis.implicitRequirements,
+      seniority: analysis.seniority,
+      experienceRange: analysis.experienceRange,
+      domain: analysis.domain,
+      searchQueries: analysis.searchQueries,
     };
     await job.save();
 
@@ -49,9 +52,6 @@ export const analyzeJobController = async (req, res) => {
     });
 
   } catch (error) {
-    return res.status(500).json({
-      success: false,
-      message: error.message,
-    });
+    return res.status(500).json({ success: false, message: error.message });
   }
 };

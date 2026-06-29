@@ -55,11 +55,30 @@ const candidateSchema = new mongoose.Schema(
       default: 0,
     },
     scoreBreakdown: {
-      technicalSkills: { type: Number, default: 0 },
-      seniorityIndicators: { type: Number, default: 0 },
-      domainExperience: { type: Number, default: 0 },
+      technicalFit: { type: Number, default: 0 },
+      experienceMatch: { type: Number, default: 0 },
+      domainMatch: { type: Number, default: 0 },
+      communicationPrediction: { type: Number, default: 0 },
+      educationMatch: { type: Number, default: 0 },
+      locationMatch: { type: Number, default: 0 },
+      resumeQuality: { type: Number, default: 0 }
     },
     flags: [String],
+    redFlags: [{
+      reason: String,
+      severity: { type: String, enum: ["Low", "Medium", "High", "Critical"] }
+    }],
+    strengths: [String],
+    aiRecommendation: {
+      type: String,
+      enum: ["Highly Recommended", "Recommended", "Consider", "Reject", "Pending"],
+      default: "Pending"
+    },
+    overallRank: Number,
+    percentile: Number,
+    expectedSalary: String,
+    availability: String,
+    isSynthetic: { type: Boolean, default: false },
     interviewQuestions: [
       {
         question: { type: String, required: true },

@@ -27,7 +27,7 @@ const Sidebar = ({ activeTab, setActiveTab, onLogout }) => {
   return (
     <div className="h-screen w-20 flex flex-col items-center py-8 bg-slate-900/40 border-r border-white/5 backdrop-blur-xl z-50 justify-between">
       <div className="flex flex-col items-center w-full">
-        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center shadow-[0_0_20px_rgba(79,124,255,0.4)] mb-12">
+        <div className="w-10 h-10 rounded-xl bg-linear-to-br from-primary to-secondary flex items-center justify-center shadow-[0_0_20px_rgba(79,124,255,0.4)] mb-12">
           <BrainCircuit className="text-white w-6 h-6" />
         </div>
 
@@ -74,7 +74,7 @@ const LandingHero = ({ onNavigate, recruiterName }) => {
       animate={{ opacity: 1, y: 0 }}
       className="flex-1 h-full flex flex-col items-center justify-center p-12 relative overflow-hidden"
     >
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-hero-glow rounded-full blur-[120px] opacity-20 pointer-events-none" />
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-200 h-200 bg-hero-glow rounded-full blur-[120px] opacity-20 pointer-events-none" />
 
       <div className="relative z-10 max-w-4xl text-center flex flex-col items-center">
         <motion.span
@@ -90,7 +90,7 @@ const LandingHero = ({ onNavigate, recruiterName }) => {
           className="text-6xl font-bold text-white tracking-tight mb-6"
         >
           Find Your Next Top Performer <br />
-          <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-secondary">with Open-Source AI</span>
+          <span className="text-transparent bg-clip-text bg-linear-to-r from-primary to-secondary">with Open-Source AI</span>
         </motion.h1>
 
         <motion.p
@@ -106,7 +106,7 @@ const LandingHero = ({ onNavigate, recruiterName }) => {
           onClick={() => onNavigate('create-job')}
           className="group relative px-8 py-4 bg-primary text-white font-semibold rounded-full shadow-[0_0_40px_-10px_#4F7CFF] overflow-hidden"
         >
-          <div className="absolute inset-0 w-full h-full bg-gradient-to-r from-primary to-secondary opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+          <div className="absolute inset-0 w-full h-full bg-linear-to-r from-primary to-secondary opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
           <span className="relative z-10 flex items-center text-lg">
             <Sparkles className="w-5 h-5 mr-2" />
             Create AI Job
@@ -146,7 +146,7 @@ const CreateJobView = ({ onJobCreated }) => {
   const [company, setCompany] = useState('');
   const [location, setLocation] = useState('');
   const [employmentType, setEmploymentType] = useState('Full-time');
-  const [experience, setExperience] = useState('2-5 years');
+  const [experience, setExperience] = useState('');
   const [salary, setSalary] = useState('');
   const [description, setDescription] = useState('');
   
@@ -267,7 +267,7 @@ const CreateJobView = ({ onJobCreated }) => {
               type="text"
               value={experience}
               onChange={(e) => setExperience(e.target.value)}
-              placeholder="e.g. 3-5 years"
+              placeholder="e.g. 2-3 years"
               className="w-full bg-slate-900/60 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-primary transition-colors"
             />
           </div>
@@ -317,7 +317,7 @@ const CreateJobView = ({ onJobCreated }) => {
       </div>
 
       {/* AI Analysis Panel */}
-      <div className="w-[400px] bg-slate-900/40 border-l border-white/5 backdrop-blur-xl p-8 flex flex-col justify-between">
+      <div className="w-100 bg-slate-900/40 border-l border-white/5 backdrop-blur-xl p-8 flex flex-col justify-between">
         <div className="space-y-6 flex-1 overflow-y-auto">
           <div className="flex items-center space-x-3 mb-8">
             <Sparkles className="text-primary w-5 h-5" />

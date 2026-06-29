@@ -2,8 +2,7 @@ import fs from "fs";
 import path from "path";
 import Candidate from "../models/Candidate.models.js";
 import Job from "../models/Job.models.js";
-import { transcribeVideo } from "../services/whisperService.js";
-import { evaluateInterview } from "../services/interviewEvaluationService.js";
+import { getAIProvider } from "../services/ai/factory.js";
 
 /**
  * Validates a secure token and returns interview details
@@ -120,7 +119,6 @@ export const uploadAnswerChunk = async (req, res) => {
       // Save video url in candidate document
       const candidate = await Candidate.findOne({ interviewToken: token });
       if (candidate) {
-        // Update or insert the answer
         const videoUrl = `/uploads/videos/${token}-q${qIdx}.mp4`;
         
         // Find existing answer or push a new one
@@ -198,22 +196,24 @@ async function runBackgroundEvaluation(token) {
   const job = await Job.findById(candidate.jobId);
   if (!job) return;
 
+  const aiProvider = getAIProvider();
+
   try {
-    // 1. Transcribe each video using Whisper
+    // 1. Transcribe each video using Whisper (via AI Provider)
     for (const answer of candidate.interviewAnswers) {
       if (answer.videoUrl && !answer.transcription) {
         const localVideoPath = path.join(process.cwd(), answer.videoUrl);
         console.log(`🎙️ Transcribing: ${localVideoPath}`);
-        const text = await transcribeVideo(localVideoPath);
+        const text = await aiProvider.transcribeAudio(localVideoPath);
         answer.transcription = text;
       }
     }
 
     await candidate.save();
 
-    // 2. Evaluate transcripts using Qwen 2.5
-    console.log("🧠 Evaluating transcripts with Qwen 2.5...");
-    const evaluation = await evaluateInterview(
+    // 2. Evaluate transcripts using Qwen 2.5 (via AI Provider)
+    console.log("🧠 Evaluating transcripts...");
+    const evaluation = await aiProvider.evaluateInterview(
       candidate,
       job,
       candidate.interviewQuestions,

@@ -57,25 +57,40 @@ const jobSchema = new mongoose.Schema(
       default: "Open",
     },
     aiAnalysis: {
-    extractedSkills: [String],
-
-    preferredSkills: [String],
-
-    seniority: String,
-
-    experience: String,
-
-    softSkills: [String],
-
-    keywords: [String],
-
-    searchQueries: [String],
-
-    analyzed: {
+      extractedSkills: [{
+        skill: String,
+        confidence: Number,
+        level: String
+      }],
+      preferredSkills: [{
+        skill: String,
+        confidence: Number
+      }],
+      softSkills: [{
+        skill: String,
+        confidence: Number
+      }],
+      implicitRequirements: [{
+        requirement: String,
+        confidence: Number
+      }],
+      seniority: {
+        level: String,
+        confidence: Number
+      },
+      experienceRange: {
+        min: Number,
+        max: Number,
+        confidence: Number
+      },
+      domain: String,
+      keywords: [String],
+      searchQueries: [String],
+      analyzed: {
         type: Boolean,
         default: false
-    }
-},
+      }
+    },
   },
   {
     timestamps: true,

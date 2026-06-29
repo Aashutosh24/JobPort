@@ -1,11 +1,10 @@
 import dotenv from "dotenv";
 import path from "path";
-import analyzeJob from "../src/services/jobAnalysisService.js";
-import { getEmbedding, calculateCosineSimilarity } from "../src/services/embeddingService.js";
+import { getAIProvider } from "../src/services/ai/factory.js";
 import { scoreCandidate } from "../src/services/semanticScoringService.js";
-import { generateQuestions } from "../src/services/interviewQuestionService.js";
-import { evaluateInterview } from "../src/services/interviewEvaluationService.js";
+import { calculateCosineSimilarity } from "../src/services/embeddingService.js";
 
+// Load environment variables
 dotenv.config({ path: path.join(process.cwd(), ".env") });
 
 const sampleJobDescription = `
@@ -30,34 +29,33 @@ const sampleCandidate = {
 };
 
 async function runTest() {
-  console.log("🚀 Starting E2E AI Pipeline Integration Test...\n");
+  console.log("🚀 Starting E2E Local AI Pipeline Integration Test...\n");
 
-  if (!process.env.HF_TOKEN) {
-    console.log("⚠️ HF_TOKEN not found in environment. Using local rule-based fallbacks.");
-  } else {
-    console.log("✅ HF_TOKEN found. Running real Qwen 2.5 and BGE Inference.");
-  }
+  const aiProvider = getAIProvider();
+  console.log(`Using AI Provider: ${aiProvider.constructor.name}\n`);
 
   try {
     // 1. Test Job Analysis
-    console.log("\n--- 1. Testing Job Description Analysis ---");
-    const analysis = await analyzeJob(sampleJobDescription);
+    console.log("--- 1. Testing Local Job Description Analysis ---");
+    console.log("Analyzing description (running local BGE embeddings + Qwen)...");
+    const analysis = await aiProvider.analyzeJob(sampleJobDescription);
     console.log("Seniority Extracted:", analysis.seniority.level);
     console.log("Required Skills:", analysis.extractedSkills.map(s => s.skill).join(", "));
     console.log("Implicit Requirements:", analysis.implicitRequirements.map(r => r.requirement).join(", "));
     console.log("Embedding Vector Length:", analysis.embedding.length);
+    console.log("Sample Vector (first 5 elements):", analysis.embedding.slice(0, 5));
 
     // 2. Test Embedding and Cosine Similarity
-    console.log("\n--- 2. Testing BGE Embeddings & Cosine Similarity ---");
+    console.log("\n--- 2. Testing Local BGE Embeddings & Cosine Similarity ---");
     const candidateText = `${sampleCandidate.title} ${sampleCandidate.skills.join(", ")} ${sampleCandidate.experienceSummary}`;
-    const candidateEmbedding = await getEmbedding(candidateText);
+    const candidateEmbedding = await aiProvider.generateEmbedding(candidateText);
     const similarity = calculateCosineSimilarity(analysis.embedding, candidateEmbedding);
+    console.log("Candidate Embedding Vector Length:", candidateEmbedding.length);
     console.log("Cosine Similarity:", similarity.toFixed(4));
     console.log("Semantic Match Score:", Math.round(similarity * 100) + "%");
 
     // 3. Test Candidate Scoring & Red Flag Detection
     console.log("\n--- 3. Testing Candidate Scoring & Red Flags ---");
-    // Mock job object for controller signature compatibility
     const mockJob = {
       title: "Senior Backend Engineer",
       company: "Acme Corp",
@@ -73,7 +71,7 @@ async function runTest() {
 
     // 4. Test Interview Question Generation
     console.log("\n--- 4. Testing Customized Question Generation ---");
-    const questions = await generateQuestions(sampleCandidate, mockJob);
+    const questions = await aiProvider.generateQuestions(sampleCandidate, mockJob);
     questions.forEach((q, idx) => {
       console.log(`Q${idx + 1} (${q.type}): "${q.question}"`);
     });
@@ -95,7 +93,7 @@ async function runTest() {
       }
     ];
 
-    const evaluation = await evaluateInterview(sampleCandidate, mockJob, questions, sampleAnswers);
+    const evaluation = await aiProvider.evaluateInterview(sampleCandidate, mockJob, questions, sampleAnswers);
     console.log("Overall Verdict:", evaluation.scorecard.verdict);
     console.log("Verdict Confidence:", evaluation.scorecard.confidence + "%");
     console.log("Assessment Summary:", evaluation.scorecard.summary);
@@ -104,7 +102,7 @@ async function runTest() {
       console.log(`- ${q}`);
     });
 
-    console.log("\n✅ E2E AI Pipeline Integration Test Completed Successfully!");
+    console.log("\n✅ E2E Local AI Pipeline Integration Test Completed Successfully!");
 
   } catch (error) {
     console.error("\n❌ Test failed with error:", error);

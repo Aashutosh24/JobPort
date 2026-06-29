@@ -18,118 +18,70 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 export const scrapeCandidates = async (title, location, jobId) => {
   console.log(`🔍 Starting candidate scraping for Job: "${title}" in "${location}"`);
 
-  const query = `${title} ${location}`;
   let candidatesFound = [];
 
-  // Source 1: GitHub Profile Search (Highly reliable public API)
-  try {
-    const githubCandidates = await scrapeGitHubProfiles(title, location);
-    candidatesFound = [...candidatesFound, ...githubCandidates];
-  } catch (error) {
-    console.error("❌ GitHub scraper failed:", error.message);
-  }
+  const jobAnalysis = await JobAnalysis.findOne({ jobId });
+  const job = await Job.findById(jobId);
+  const queries = buildCandidateSearchQueries({ title, location, jobAnalysis, job });
 
-  // Source 2: Public Search Engine (DuckDuckGo HTML parsing for public LinkedIn/Indeed references)
-  try {
-    const searchCandidates = await scrapePublicWebSearch(title, location);
-    candidatesFound = [...candidatesFound, ...searchCandidates];
-  } catch (error) {
-    console.error("❌ Public Web scraper failed:", error.message);
-  }
-
-  // If no candidates were found, fallback to generating realistic profiles to ensure the pipeline functions
-  if (candidatesFound.length === 0) {
-    console.log("⚠️ No profiles scraped, generating realistic candidate profiles from public database...");
-    candidatesFound = generateScrapedProfilesFallback(title, location);
-  }
-
-  return candidatesFound;
-};
-
-/**
- * Scrapes GitHub user profiles
- */
-async function scrapeGitHubProfiles(title, location, page = 1) {
-  const candidates = [];
-  let retryCount = 0;
-  const maxRetries = 3;
-  let backoffTime = 1000; // 1 second
-
-  while (retryCount < maxRetries) {
+  for (const query of queries) {
     try {
-      // Search for users with the title in their bio/profile and location
-      const queryStr = `${title} location:"${location}"`;
-      const url = `https://api.github.com/search/users?q=${encodeURIComponent(queryStr)}&page=${page}&per_page=5`;
-      
-      const response = await axios.get(url, {
-        headers: {
-          User_Agent: "TalentScreeningApp/1.0",
-        },
-        timeout: 8000
-      });
-
-      const items = response.data?.items || [];
-
-      for (const item of items) {
-        // Fetch detailed profile for each user
-        await delay(500); // polite rate limiting
-        try {
-          const profileResponse = await axios.get(item.url, { timeout: 5000 });
-          const p = profileResponse.data;
-          
-          if (p.name) {
-            candidates.push({
-              name: p.name,
-              title: p.bio || `${title} @ GitHub`,
-              company: p.company || "Independent",
-              profileUrl: p.html_url,
-              email: p.email || `${p.login}@github.com`,
-              skills: p.blog ? ["Git", "GitHub", "Web Development"] : ["Git", "GitHub"],
-              experienceSummary: p.bio || `Developer on GitHub with ${p.public_repos} public repositories.`,
-              experienceYears: Math.max(1, Math.round((p.public_repos || 5) / 8)),
-              source: "GitHub"
-            });
-          }
-        } catch (detailError) {
-          // If detailed fetch fails, still process with partial data (name and username)
-          candidates.push({
-            name: item.login,
-            title: title,
-            company: "GitHub User",
-            profileUrl: item.html_url,
-            email: `${item.login}@github.com`,
-            skills: ["Git"],
-            experienceSummary: "Profile details unavailable (partial data scraped).",
-            experienceYears: 1,
-            source: "GitHub"
-          });
-        }
-      }
-
-      break; // Success, exit retry loop
+      const searchCandidates = await scrapePublicWebSearch(query, { title, location, jobAnalysis, job });
+      candidatesFound.push(...searchCandidates);
     } catch (error) {
-      if (error.response?.status === 403 || error.response?.status === 429) {
-        retryCount++;
-        console.warn(`⚠️ GitHub rate limit hit. Backing off for ${backoffTime}ms (Retry ${retryCount}/${maxRetries})`);
-        await delay(backoffTime);
-        backoffTime *= 2; // exponential backoff
-      } else {
-        throw error; // Other error, throw it
-      }
+      console.error(`❌ Public search failed for query "${query}":`, error.message);
     }
   }
 
-  return candidates;
+  const uniqueCandidates = dedupeCandidates(candidatesFound);
+
+  if (uniqueCandidates.length === 0) {
+    console.log("⚠️ No real profiles found from public sources. Skipping synthetic fallback so the pipeline stays honest.");
+  }
+
+  return uniqueCandidates;
+};
+
+/**
+ * Builds a set of public search queries from the job context.
+ */
+function buildCandidateSearchQueries({ title, location, jobAnalysis, job }) {
+  const baseQuery = `${title} ${location}`.trim();
+  const skillQuery = (jobAnalysis?.extractedSkills || [])
+    .map((skill) => skill.skill)
+    .filter(Boolean)
+    .slice(0, 4)
+    .join(" ");
+
+  const queries = [
+    `${baseQuery} site:linkedin.com/in/`,
+    `${baseQuery} site:github.com`,
+    `${baseQuery} portfolio OR resume`,
+    `${skillQuery ? `${skillQuery} ${location}`.trim() : baseQuery} site:linkedin.com/in/`,
+    `${skillQuery ? `${skillQuery} ${location}`.trim() : baseQuery} site:github.com`,
+  ].filter(Boolean);
+
+  if (jobAnalysis?.domain) {
+    queries.unshift(`${jobAnalysis.domain} ${baseQuery}`.trim());
+  }
+
+  if (job?.company) {
+    queries.unshift(`${title} ${job.company} ${location}`.trim());
+  }
+
+  return [...new Set(queries)];
 }
 
 /**
- * Scrapes public search results (simulated DuckDuckGo HTML parser)
+ * Scrapes public candidate profiles from search results by parsing titles and snippets.
  */
-async function scrapePublicWebSearch(title, location) {
+async function scrapePublicWebSearch(query, context = {}) {
   const candidates = [];
   try {
-    // Search for public LinkedIn profiles
-    const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(title + " " + location + " site:linkedin.com/in/")}`;
+    const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+    
+    console.log(`🔍 Querying public search engine: ${query}`);
+    
     const response = await axios.get(searchUrl, {
       headers: {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
@@ -138,43 +90,132 @@ async function scrapePublicWebSearch(title, location) {
     });
 
     const html = response.data;
-    // Extract titles and URLs using Regex
-    const linkRegex = /<a class="result__url"[^>]*href="([^"]+)"/g;
-    const titleRegex = /<a class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g;
     
-    let match;
-    const urls = [];
-    while ((match = linkRegex.exec(html)) !== null && urls.length < 5) {
-      if (match[1].includes("linkedin.com/in/")) {
-        urls.push(decodeURIComponent(match[1].split("&")[0].replace("//duckduckgo.com/l/?kh=-1&uddg=", "")));
-      }
+    const resultRegex = /<div class="result results_links results_links_deep web-result[^"]*">([\s\S]*?)<\/div>\s*<\/div>/g;
+
+    let blockMatch;
+    let count = 0;
+
+    while ((blockMatch = resultRegex.exec(html)) !== null && count < 8) {
+      const blockHtml = blockMatch[1];
+      const urlMatch = blockHtml.match(/<a class="result__url"[^>]*href="([^"]+)"/);
+      if (!urlMatch) continue;
+
+      const rawUrl = urlMatch[1];
+      const url = decodeURIComponent(rawUrl.split("&")[0].replace("//duckduckgo.com/l/?kh=-1&uddg=", ""));
+      if (!isProfileUrl(url)) continue;
+
+      const titleLinkMatch = blockHtml.match(/<a class="result__link"[^>]*>([\s\S]*?)<\/a>/);
+      const titleText = titleLinkMatch ? titleLinkMatch[1].replace(/<[^>]*>/g, "").trim() : "";
+      const snippetMatch = blockHtml.match(/<a class="result__snippet"[^>]*>([\s\S]*?)<\/a>/);
+      const snippetText = snippetMatch ? snippetMatch[1].replace(/<[^>]*>/g, "").trim() : "";
+
+      const candidate = normalizeCandidateFromResult({ url, titleText, snippetText, context, query });
+      if (!candidate) continue;
+
+      candidates.push(candidate);
+      count++;
     }
-
-    // Since scraping LinkedIn HTML directly usually triggers CAPTCHAs, we extract details from search snippets
-    // and construct partial profiles, which is extremely robust.
-    urls.forEach((url, index) => {
-      const nameMatch = url.match(/linkedin\.com\/in\/([^\/]+)/);
-      const username = nameMatch ? nameMatch[1].replace(/-/g, " ") : `Candidate ${index + 1}`;
-      const name = username.split(" ").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
-      
-      candidates.push({
-        name,
-        title: title,
-        company: "Public Profile",
-        profileUrl: url,
-        email: `${username.replace(/\s+/g, "")}@example.com`,
-        skills: ["Software Engineering"],
-        experienceSummary: `Public profile found via web search for ${title} in ${location}.`,
-        experienceYears: 3,
-        source: "Public Search"
-      });
-    });
-
   } catch (error) {
     console.warn("⚠️ Web search scraper failed or was blocked:", error.message);
   }
-
+  
   return candidates;
+}
+
+function isProfileUrl(url) {
+  const lower = (url || "").toLowerCase();
+  return lower.includes("linkedin.com/in/") || lower.includes("github.com/") || lower.includes("github.io/") || lower.includes("portfolio") || lower.includes("resume");
+}
+
+function normalizeCandidateFromResult({ url, titleText, snippetText, context = {}, query = "" }) {
+  if (!titleText && !snippetText) return null;
+
+  const source = url.includes("github.com") ? "GitHub" : url.includes("linkedin.com") ? "LinkedIn" : "Public Search";
+  const headline = titleText || snippetText || context.title || "Professional Profile";
+  const name = extractNameFromTitle(titleText, url);
+  if (!name) return null;
+
+  const sourceText = `${titleText} ${snippetText} ${query} ${context.title || ""} ${context.location || ""}`;
+  const skills = extractSkillsFromText(sourceText, context.jobAnalysis);
+  const experienceYears = extractExperienceYears(sourceText) ?? 3;
+
+  return {
+    name,
+    title: headline.replace(/\| LinkedIn$/i, "").trim(),
+    company: extractCompanyFromTitle(titleText) || (source === "GitHub" ? "Open Source" : "Independent"),
+    profileUrl: url,
+    email: `${name.toLowerCase().replace(/[^a-z0-9]/g, "") || "candidate"}@example.com`,
+    skills: skills.length ? skills : ["Software Engineering"],
+    experienceSummary: snippetText || `${source} profile for ${name}: ${headline}`,
+    experienceYears,
+    source,
+  };
+}
+
+function extractNameFromTitle(titleText, url) {
+  const cleanTitle = (titleText || "").replace(/\s*\|\s*LinkedIn$/i, "").trim();
+  const parts = cleanTitle.split(/\s+-\s+|\s+\|\s+/);
+  const firstPart = parts[0] || "";
+  const candidateName = firstPart.replace(/\s*\(.*\)\s*/g, "").trim();
+  if (candidateName && !/linkedin|github/i.test(candidateName)) {
+    return candidateName;
+  }
+
+  if (url.includes("github.com/")) {
+    const username = url.split("github.com/")[1]?.split(/[/?#]/)[0];
+    if (username) {
+      return username.replace(/[._-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+    }
+  }
+
+  return null;
+}
+
+function extractCompanyFromTitle(titleText) {
+  if (!titleText) return null;
+  const parts = titleText.split(/\s+-\s+|\s+\|\s+/).map((part) => part.trim()).filter(Boolean);
+  if (parts.length > 2 && !parts[2].toLowerCase().includes("linkedin")) {
+    return parts[2];
+  }
+  return null;
+}
+
+function extractSkillsFromText(text, jobAnalysis) {
+  const normalized = (text || "").toLowerCase();
+  const skillsList = [
+    "React", "Node.js", "Python", "Go", "TypeScript", "JavaScript", "AWS", "Docker", "Kubernetes",
+    "MongoDB", "PostgreSQL", "System Design", "Machine Learning", "AI", "LLM", "RAG", "NLP", "Deep Learning",
+    "TensorFlow", "PyTorch", "FastAPI", "GraphQL"
+  ];
+
+  const jobSkills = (jobAnalysis?.extractedSkills || []).map((skill) => skill.skill).filter(Boolean);
+  const mergedSkills = [...new Set([...skillsList, ...jobSkills])];
+
+  return mergedSkills.filter((skill) => {
+    const pattern = skill.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(`\\b${pattern}\\b`, "i").test(normalized);
+  });
+}
+
+function extractExperienceYears(text) {
+  const normalized = (text || "").toLowerCase();
+  const match = normalized.match(/(\d+)\s*(?:\+|plus)?\s*(?:years?|yrs?)/i);
+  return match ? parseInt(match[1], 10) : null;
+}
+
+function dedupeCandidates(candidates) {
+  const seen = new Set();
+  const unique = [];
+
+  for (const candidate of candidates) {
+    const key = [candidate.email, candidate.profileUrl, candidate.name].join("|").toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(candidate);
+  }
+
+  return unique;
 }
 
 /**
@@ -210,7 +251,8 @@ function generateScrapedProfilesFallback(title, location) {
         skills: ["Software Engineering"],
         experienceSummary: "No detailed experience summary listed on the public profile.",
         experienceYears: 1,
-        source: "LinkedIn"
+        source: "LinkedIn",
+        isSynthetic: true
       };
     }
 
@@ -223,7 +265,8 @@ function generateScrapedProfilesFallback(title, location) {
       skills: candidateSkills,
       experienceSummary: `Experienced professional specializing in building high-quality web services. Currently working as a developer at ${candidate.company}. Focused on delivering scalable solutions in ${location}.`,
       experienceYears: candidate.exp,
-      source: idx % 2 === 0 ? "LinkedIn" : "Public Search"
+      source: idx % 2 === 0 ? "LinkedIn" : "Public Search",
+      isSynthetic: true
     };
   });
 }
@@ -278,7 +321,10 @@ export const runBackgroundScrapeAndScore = async (jobId) => {
         
         newCandidate.matchScore = scoring.matchScore;
         newCandidate.scoreBreakdown = scoring.scoreBreakdown;
-        newCandidate.flags = scoring.flags;
+        newCandidate.redFlags = scoring.redFlags;
+        newCandidate.strengths = scoring.strengths;
+        newCandidate.aiRecommendation = scoring.aiRecommendation;
+        newCandidate.isSynthetic = profile.isSynthetic || false;
         newCandidate.experienceSummary = scoring.summary; // updated summary from AI
         newCandidate.embedding = scoring.embedding;
         newCandidate.processingStatus = "Completed";

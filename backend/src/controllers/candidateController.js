@@ -2,7 +2,7 @@ import Candidate from "../models/Candidate.models.js";
 import Job from "../models/Job.models.js";
 import JobAnalysis from "../models/JobAnalysis.models.js";
 import { runBackgroundScrapeAndScore } from "../services/scraperService.js";
-import { generateQuestions } from "../services/interviewQuestionService.js";
+import { getAIProvider } from "../services/ai/factory.js";
 import nodemailer from "nodemailer";
 
 /**
@@ -17,7 +17,7 @@ export const scrapeCandidatesForJob = async (req, res) => {
       return res.status(404).json({ success: false, message: "Job not found" });
     }
 
-    // Trigger background process (don't await)
+    // Trigger background process
     runBackgroundScrapeAndScore(jobId).catch((err) =>
       console.error("❌ Background scraping error:", err.message)
     );
@@ -56,7 +56,7 @@ export const getCandidatesForJob = async (req, res) => {
 export const updateCandidateStatus = async (req, res) => {
   try {
     const { id } = req.params;
-    const { status } = req.body; // Applied, Shortlisted, Rejected
+    const { status } = req.body;
 
     if (!["Applied", "Shortlisted", "Rejected"].includes(status)) {
       return res.status(400).json({ success: false, message: "Invalid status value" });
@@ -84,11 +84,12 @@ export const updateCandidateStatus = async (req, res) => {
 
 /**
  * Sends an interview invitation email with a unique secure link.
- * Generates candidate-specific interview questions if they don't exist.
+ * Supports sending to a custom email (e.g., recruiter's test email) and returns links.
  */
 export const sendInterviewInvitation = async (req, res) => {
   try {
     const { id } = req.params;
+    const { customEmail } = req.body; // Optional custom email for testing
 
     const candidate = await Candidate.findById(id);
     if (!candidate) {
@@ -100,9 +101,10 @@ export const sendInterviewInvitation = async (req, res) => {
       return res.status(404).json({ success: false, message: "Associated job not found" });
     }
 
-    // 1. Generate customized questions if not already generated
+    // 1. Generate customized questions using the AI Provider
     if (!candidate.interviewQuestions || candidate.interviewQuestions.length === 0) {
-      const questions = await generateQuestions(candidate, job);
+      const aiProvider = getAIProvider();
+      const questions = await aiProvider.generateQuestions(candidate, job);
       candidate.interviewQuestions = questions;
     }
 
@@ -111,11 +113,13 @@ export const sendInterviewInvitation = async (req, res) => {
     await candidate.save();
 
     // 3. Construct unique links
-    const webFallbackUrl = `http://localhost:5173/interview/${candidate.interviewToken}`;
+    const webFallbackUrl = `http://localhost:5174/interview/${candidate.interviewToken}`; // Port 5174 is candidate-web
     const deepLinkUrl = `jobport://interview/${candidate.interviewToken}`;
 
-    // 4. Send email (simulated or real SMTP)
-    console.log(`✉️ Sending invitation to ${candidate.name} (${candidate.email})`);
+    // Target email is either the custom email entered in UI or the candidate's scraped email
+    const recipientEmail = customEmail || candidate.email;
+
+    console.log(`✉️ Sending invitation to ${candidate.name} via ${recipientEmail}`);
     console.log(`🔗 Web Fallback: ${webFallbackUrl}`);
     console.log(`🔗 App Deep Link: ${deepLinkUrl}`);
 
@@ -131,7 +135,7 @@ export const sendInterviewInvitation = async (req, res) => {
 
       const mailOptions = {
         from: '"TalentScreening AI" <interviews@talentscreen.ai>',
-        to: candidate.email,
+        to: recipientEmail,
         subject: `Video Interview Invitation: ${job.title} at ${job.company}`,
         html: `
           <div style="font-family: sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
@@ -155,9 +159,8 @@ export const sendInterviewInvitation = async (req, res) => {
         `,
       };
 
-      // We send asynchronously so we don't block the API response
       transporter.sendMail(mailOptions).catch(err => 
-        console.warn("⚠️ SMTP Email sending failed (this is normal if credentials aren't configured yet):", err.message)
+        console.warn("⚠️ SMTP Email sending failed (normal if credentials aren't configured):", err.message)
       );
 
     } catch (emailError) {
@@ -166,7 +169,7 @@ export const sendInterviewInvitation = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: `Interview invitation sent to ${candidate.name}`,
+      message: `Interview invitation sent to ${candidate.name} via ${recipientEmail}`,
       webFallbackUrl,
       deepLinkUrl,
     });

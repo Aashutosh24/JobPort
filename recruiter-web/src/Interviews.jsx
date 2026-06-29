@@ -199,7 +199,7 @@ export default function Interviews({ selectedCandidate, selectedJob }) {
                         <div className="relative aspect-video bg-slate-950 rounded-2xl overflow-hidden border border-white/5">
                           {interviewAnswers[activeAnswerIdx].videoUrl ? (
                             <video
-                              src={`http://localhost:5000${interviewAnswers[activeAnswerIdx].videoUrl}`}
+                              src={`http://${window.location.hostname}:5000${interviewAnswers[activeAnswerIdx].videoUrl}`}
                               controls
                               className="w-full h-full object-contain"
                               poster="https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=600&auto=format&fit=crop"
